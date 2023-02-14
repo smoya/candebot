@@ -7,49 +7,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/bcneng/candebot/cmd"
 	"github.com/newrelic/newrelic-telemetry-sdk-go/telemetry"
 	"github.com/slack-go/slack"
 )
 
-const (
-	msgCOC        = "Please find our Code Of Conduct here: https://bcneng.org/coc"
-	msgNetiquette = "Please find our Netiquette here: https://bcneng.org/netiquette"
-)
-
-const (
-	channelHiringJobBoard  = "C30CUFT2B"
-	channelStaff           = "G983W7L9F"
-	channelCandebotTesting = "CK32YCX5M"
-)
-
-const (
-	candebotUser  = "UJNQU8N5Q"
-	candebotBotID = "BJNQBKGJF"
-)
-
-var staff = []string{
-	"U2Y6QQHST", //<@gonzaloserrano>
-	"U2WPLA0KA", //<@smoya>
-	"U3256HZH9", //<@mavi>
-	"U36H6F3CN", //<@sdecandelario>
-	"UHHJ97JBF", //<@cristina_verdi>
-	"U2XDM2L0G", //<@ronnylt>
-}
-
-// WakeUp wakes up Candebot.
+// WakeUp wakes up the bot.
 func WakeUp(_ context.Context, conf Config) error {
-	client := slack.New(conf.Bot.UserToken)
-	adminClient := slack.New(conf.Bot.AdminToken)
-
-	cliContext := cmd.BotContext{
-		Client:              client,
-		AdminClient:         adminClient,
-		SigningSecret:       conf.Bot.Server.SigningSecret,
-		StaffMembers:        staff,
-		TwitterCredentials:  conf.Twitter.Credentials,
-		TwitterContestToken: conf.TwitterContestToken,
-		Version:             conf.Version,
+	cliContext := Context{
+		Client:      slack.New(conf.Bot.UserToken),
+		AdminClient: slack.New(conf.Bot.AdminToken),
+		Config:      conf,
+		Version:     conf.Version,
 	}
 
 	if conf.NewRelicLicenseKey != "" {
@@ -65,7 +33,7 @@ func WakeUp(_ context.Context, conf Config) error {
 	return serve(conf, cliContext)
 }
 
-func serve(conf Config, cliContext cmd.BotContext) error {
+func serve(conf Config, cliContext Context) error {
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -85,10 +53,10 @@ func serve(conf Config, cliContext cmd.BotContext) error {
 
 		switch s.Command {
 		case "/coc":
-			msg := &slack.Msg{Text: msgCOC}
+			msg := &slack.Msg{Text: fmt.Sprintf("Please find our Code Of Conduct here: %s", conf.Links.COC)}
 			writeSlashResponse(w, msg)
 		case "/netiquette":
-			msg := &slack.Msg{Text: msgNetiquette}
+			msg := &slack.Msg{Text: fmt.Sprintf("Please find our Netiquette here: %s", conf.Links.Netiquette)}
 			writeSlashResponse(w, msg)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)

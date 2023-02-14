@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -11,8 +12,22 @@ import (
 	"github.com/bcneng/candebot/bot"
 )
 
-// Version is the candebot version. Usually the git commit hash. Passed during building.
+// Version is the bot version. Usually the git commit hash. Passed during building.
 var Version = "unknown"
+
+type initConfig struct {
+	ConfigFilePath string `env:"CONFIG_FILE_PATH"`
+	EnvVarsPrefix  string `env:"ENV_VARS_PREFIX"`
+}
+
+var initConf = initConfig{}
+
+func init() {
+	flag.StringVar(&initConf.ConfigFilePath, "config", "./bot.toml", "path to config file (TOML)")
+	flag.StringVar(&initConf.EnvVarsPrefix, "env-prefix", "BOT_", "path to config file (TOML)")
+
+	flag.Parse()
+}
 
 func main() {
 	var conf bot.Config
@@ -22,7 +37,8 @@ func main() {
 	defer cancel()
 
 	// TODO Prefix and filepath from argument
-	err := bot.LoadConfigFromFileAndEnvVars(ctx, "CANDEBOT_", ".candebot.toml", &conf)
+	err := bot.LoadConfigFromFileAndEnvVars(ctx, initConf.EnvVarsPrefix, initConf.ConfigFilePath, &conf)
+	//err := bot.LoadConfigFromFileAndEnvVars(ctx, "CANDEBOT_", ".candebot.toml", &conf)
 	if err != nil {
 		log.Fatal(err)
 	}

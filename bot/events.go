@@ -2,8 +2,10 @@ package bot
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/asaskevich/EventBus"
 	"log"
 	"net/http"
 	"strings"
@@ -17,7 +19,84 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
-func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
+type MessageEvent interface {
+	slackevents.AppMentionEvent | slackevents.AppHomeOpenedEvent | slackevents.AppUninstalledEvent |
+		slackevents.ChannelCreatedEvent | slackevents.ChannelDeletedEvent | slackevents.ChannelArchiveEvent |
+		slackevents.ChannelUnarchiveEvent | slackevents.ChannelLeftEvent | slackevents.ChannelRenameEvent |
+		slackevents.ChannelIDChangedEvent | slackevents.GroupDeletedEvent | slackevents.GroupArchiveEvent |
+		slackevents.GroupUnarchiveEvent | slackevents.GroupLeftEvent | slackevents.GroupRenameEvent |
+		slackevents.GridMigrationFinishedEvent | slackevents.GridMigrationStartedEvent | slackevents.LinkSharedEvent |
+		slackevents.MessageEvent | slackevents.MemberJoinedChannelEvent | slackevents.MemberLeftChannelEvent |
+		slackevents.PinAddedEvent | slackevents.PinRemovedEvent | slackevents.ReactionAddedEvent |
+		slackevents.ReactionRemovedEvent | slackevents.TeamJoinEvent | slackevents.TokensRevokedEvent |
+		slackevents.EmojiChangedEvent
+}
+
+type Bus chan slackevents.EventsAPIInnerEvent
+
+type EventHandler[T MessageEvent] func(Context, T) error
+
+func does() EventHandler[slackevents.EmojiChangedEvent] {
+	return func(Context, slackevents.EmojiChangedEvent) error {
+
+		log.Println("HELLO!!!!!!!!!!!!!!!!!!!!!")
+		return nil
+	}
+}
+func Foo(Context, slackevents.EmojiChangedEvent) error {
+	return nil
+}
+
+func foo[T MessageEvent](m map[string]EventHandler[T]) {
+	m["whatever"] = EventHandler[T](does())
+	b := NewBus(nil, m)
+
+	b <- slackevents.EmojiChangedEvent{
+		Type: "whatever",
+	}
+
+	time.Sleep(time.Second)
+
+}
+
+func NewBus[T MessageEvent](ctx context.Context, handlers map[string]EventHandler[T]) Bus {
+	bus := EventBus.New()
+	bus.Subscribe("main:calculator", calculator)
+	bus.Publish("main:calculator", 20, 40)
+	bus.Unsubscribe("main:calculator", calculator)
+
+	var bus Bus
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-bus:
+				if !ok {
+					return
+				}
+
+				if h, ok := getHandler(handlers, event); ok { // TODO ?
+					//if h, ok := handlers["whatever"]; ok { // TODO ?
+					h(Context{}, event)
+				}
+			}
+		}
+	}()
+
+	return bus
+}
+
+func getHandler[T MessageEvent](handlers map[string]EventHandler[T], event T) (EventHandler[T], bool) {
+	for k, v := range slackevents.EventsAPIInnerEventMapping {
+		instance
+		switch t := event.(type) {
+
+		}
+	}
+}
+
+func eventsAPIHandler(botCtx Context, eventBus Bus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)
 		_, _ = buf.ReadFrom(r.Body)
@@ -26,8 +105,7 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 			log.Printf("Fail to verify SigningSecret: %v", err)
 		}
 
-		body := buf.String()
-		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
+		eventsAPIEvent, err := slackevents.ParseEvent(buf.Bytes(), slackevents.OptionNoVerifyToken())
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -36,7 +114,7 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 
 		if eventsAPIEvent.Type == slackevents.URLVerification {
 			var r *slackevents.ChallengeResponse
-			if err := json.Unmarshal([]byte(body), &r); err != nil {
+			if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
 				log.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -47,9 +125,10 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 
 		if eventsAPIEvent.Type == slackevents.CallbackEvent {
 			innerEvent := eventsAPIEvent.InnerEvent
+
 			switch event := innerEvent.Data.(type) {
 			case *slackevents.MessageEvent:
-				if event.BotID == candebotBotID {
+				if event.BotID == botCtx.Config.Bot.ID {
 					// Skip own (bot) command replies
 					return
 				}
@@ -61,7 +140,7 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 
 				if event.ChannelType == "im" {
 					log.Println("Direct message:", event.Text)
-					botCommand(botCtx, cmd.SlackContext{
+					botCommand(botCtx, SlackContext{
 						User:            event.User,
 						Channel:         event.Channel,
 						Text:            event.Text,
@@ -73,7 +152,7 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 				}
 
 				switch event.Channel {
-				case channelHiringJobBoard:
+				case botCtx.Config.Channels.Jobs:
 					// Staff members are allowed to post messages
 					if botCtx.IsStaff(event.User) {
 						return
@@ -81,16 +160,16 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 
 					// Users are allowed to only post messages in threads
 					if event.ThreadTimeStamp == "" {
-						log.Println("Someone wrote a random message in #hiring-job-board and will be removed.", event.Channel, event.Text, event.TimeStamp)
+						log.Printf("Someone wrote a random message in %s and will be removed. %s %s", event.Channel, event.Text, event.TimeStamp)
 						_, _, _ = botCtx.AdminClient.DeleteMessage(event.Channel, event.TimeStamp)
 						return
 					}
-				case channelCandebotTesting:
+				case botCtx.Config.Channels.Playground:
 					// playground
 				}
 			case *slackevents.AppMentionEvent:
 				log.Println("Mention message:", event.Text)
-				botCommand(botCtx, cmd.SlackContext{
+				botCommand(botCtx, SlackContext{
 					User:            event.User,
 					Channel:         event.Channel,
 					Text:            event.Text,
@@ -102,8 +181,8 @@ func eventsAPIHandler(botCtx cmd.BotContext) http.HandlerFunc {
 	}
 }
 
-func botCommand(botCtx cmd.BotContext, slackCtx cmd.SlackContext) {
-	text := strings.TrimSpace(strings.TrimPrefix(slackCtx.Text, fmt.Sprintf("<@%s>", candebotUser)))
+func botCommand(botCtx Context, slackCtx SlackContext) {
+	text := strings.TrimSpace(strings.TrimPrefix(slackCtx.Text, fmt.Sprintf("<@%s>", botCtx.Config.Bot.UserID)))
 	args := strings.Split(text, " ") // TODO strings.Split is not valid for quoted strings that contain spaces (E.g. echo command)
 	w := bytes.NewBuffer([]byte{})
 	defer func() {
@@ -112,7 +191,7 @@ func botCommand(botCtx cmd.BotContext, slackCtx cmd.SlackContext) {
 		}
 	}()
 
-	_, kongCLI, err := cmd.NewCLI(args, kong.Writers(w, w))
+	_, kongCLI, err := cmd.NewCLI(botCtx.Config.Bot.Name, args, kong.Writers(w, w))
 	if err != nil {
 		return
 	}
@@ -124,7 +203,7 @@ func botCommand(botCtx cmd.BotContext, slackCtx cmd.SlackContext) {
 	}
 }
 
-func checkLanguage(botCtx cmd.BotContext, event *slackevents.MessageEvent) {
+func checkLanguage(botCtx Context, event *slackevents.MessageEvent) {
 	filter := inclusion.Filter(event.Text)
 	if filter == nil {
 		return

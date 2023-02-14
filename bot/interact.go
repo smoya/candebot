@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/bcneng/candebot/cmd"
 	"github.com/bcneng/candebot/slackx"
 	"github.com/newrelic/newrelic-telemetry-sdk-go/telemetry"
 	"github.com/slack-go/slack"
@@ -20,7 +19,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-func interactAPIHandler(botContext cmd.BotContext) http.HandlerFunc {
+func interactAPIHandler(botContext Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -86,7 +85,7 @@ func interactAPIHandler(botContext cmd.BotContext) http.HandlerFunc {
 				messageText := messageData[1]
 				messageTS := messageData[2]
 
-				if channelID != channelHiringJobBoard {
+				if channelID != botContext.Config.Channels.Jobs {
 					_ = json.NewEncoder(w).Encode(
 						slack.NewErrorsViewSubmissionResponse(map[string]string{"input_block": "The message is not a valid #hiring-job-board job post"}),
 					)
@@ -190,7 +189,7 @@ func interactAPIHandler(botContext cmd.BotContext) http.HandlerFunc {
 					message.Submission["scale"],
 					sanitizeReportState(message.State),
 				)
-				_ = slackx.Send(botContext.Client, "", channelStaff, msg, false)
+				_ = slackx.Send(botContext.Client, "", botContext.Config.Channels.Staff, msg, false)
 
 				// Sending metrics
 				botContext.Harvester.RecordMetric(telemetry.Count{
@@ -241,7 +240,7 @@ func interactAPIHandler(botContext cmd.BotContext) http.HandlerFunc {
 					message.Submission["job_link"],
 					message.User.Name,
 				)
-				_ = slackx.Send(botContext.Client, "", channelHiringJobBoard, msg, false, slack.MsgOptionDisableLinkUnfurl())
+				_ = slackx.Send(botContext.Client, "", botContext.Config.Channels.Jobs, msg, false, slack.MsgOptionDisableLinkUnfurl())
 
 				// Sending metrics
 				botContext.Harvester.RecordMetric(telemetry.Count{
@@ -279,7 +278,7 @@ func logModalError(err error, resp *slack.ViewResponse) {
 	log.Println(strings.Join(resp.ResponseMetadata.Warnings, "\n"))
 }
 
-func deleteThreadMessages(botContext cmd.BotContext, threadMessages []slack.Message, channelID string) (int, bool) {
+func deleteThreadMessages(botContext Context, threadMessages []slack.Message, channelID string) (int, bool) {
 	var errored bool
 	var deleted int
 	for _, threadMessage := range threadMessages {

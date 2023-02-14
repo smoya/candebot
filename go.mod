@@ -1,6 +1,6 @@
 module github.com/bcneng/candebot
 
-go 1.17
+go 1.18
 
 require (
 	github.com/alecthomas/kong v0.7.1
@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/asaskevich/EventBus v0.0.0-20200907212545-49d423059eef // indirect
 	github.com/cenkalti/backoff v2.1.1+incompatible // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dghubble/go-twitter v0.0.0-20201011215211-4b180d0cc78d // indirect
